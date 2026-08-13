@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": false,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@contracts/*": ["src/contracts/*"],
+      "@core/*": ["src/core/*"],
+      "@world/*": ["src/world/*"],
+      "@ecology/*": ["src/ecology/*"],
+      "@creatures/*": ["src/creatures/*"],
+      "@player/*": ["src/player/*"],
+      "@society/*": ["src/society/*"],
+      "@presentation/*": ["src/presentation/*"]
+    }
+  },
+  "include": ["src", "tests", "scripts"]
+}

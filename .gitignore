@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+
+# Test + capture artifacts
+artifacts/
+coverage/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+.playwright/
+
+# Env + local
+*.local
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+.vscode/*
+!.vscode/extensions.json
+
+# Logs
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
+
+# ---------------------------------------------------------------
+# Task cards are handed out to individual members, not tracked.
+# README.md is tracked. Everything under tasks/ is not.
+# ---------------------------------------------------------------
+tasks/

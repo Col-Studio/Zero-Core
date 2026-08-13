@@ -1,0 +1,70 @@
+name: CI
+
+# FROZEN FILE — integration lead only. See CLAUDE.md § Frozen files.
+
+on:
+  push:
+    branches: [main, core, world, ecology, creatures, player, society, presentation]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: typecheck + boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # boundaries needs history to diff frozen files
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Typecheck (hallucination detector)
+        run: npm run typecheck
+      - name: Architecture boundaries
+        run: npm run boundaries
+        env:
+          FROZEN_BASE: origin/${{ github.base_ref || 'main' }}
+
+  unit:
+    name: vitest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run test -- --coverage
+
+  e2e:
+    name: playwright
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - name: Upload screenshots + report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            playwright-report/
+            test-results/
+            artifacts/
+          retention-days: 14
+          if-no-files-found: ignore
