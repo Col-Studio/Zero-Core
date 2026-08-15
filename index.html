@@ -4,6 +4,30 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WORLD ZERO</title>
+    <!--
+      Inline SVG favicon. Not decoration: without it the browser requests /favicon.ico, gets a
+      404, and logs a console error — which makes every module's "no console errors" e2e
+      assertion fail for a reason that has nothing to do with that module. Inline so there is no
+      request at all, and no binary asset in the repo.
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230b0e13'/%3E%3Ccircle cx='8' cy='8' r='5' fill='%237fa650'/%3E%3C/svg%3E"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0b0e13;
+      }
+      /* Screenshots must be byte-identical across machines; a font stack that resolves
+         differently per OS would break that the moment any module renders text. */
+      body {
+        font-family: ui-monospace, 'Cascadia Mono', 'DejaVu Sans Mono', monospace;
+      }
+    </style>
   </head>
   <body>
     <!-- FROZEN FILE — integration lead only. -->
