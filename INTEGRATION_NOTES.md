@@ -103,10 +103,13 @@ depends on it.** Until the loop lands, drive your own tick in your harness.
 uncomments exactly one line and adds one `registry.register()` call. Conflicts there are expected
 and trivial.
 
-**Playwright's CDN is geo-blocked in our region** (403 on `npx playwright install`). Workaround:
-point `PW_CHROMIUM_PATH` at any local Chromium/Chrome binary. Mine:
-`~/AppData/Local/ms-playwright/chromium-1228/chrome-win64/chrome.exe`. CI is unaffected — leave it
-unset there, since the pinned browser is what makes screenshots comparable.
+**Playwright's CDN is geo-blocked in our region** (403 on `npx playwright install`), so the pinned
+browser build is usually missing from your cache. **You do not need to do anything about this** —
+`playwright.config.ts` and `scripts/shot.mjs` share `scripts/chromium-path.mjs`, which falls back to
+the newest Chromium already in your `ms-playwright` cache. `npm run verify` passes on a bare
+checkout with no env vars. If you have no cached Chromium at all, point `PW_CHROMIUM_PATH` at any
+Chrome/Chromium binary. CI never auto-resolves — there the pinned browser is what makes screenshots
+comparable, so don't set it in a workflow.
 
 ---
 

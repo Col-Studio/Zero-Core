@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+// @ts-expect-error — plain .mjs helper, shared with scripts/shot.mjs so the two can't disagree
+// about which browser they launch. See scripts/chromium-path.mjs.
+import { resolveLocalChromium } from './scripts/chromium-path.mjs';
 
 // FROZEN FILE — integration lead only. See CLAUDE.md § Frozen files.
 //
@@ -6,6 +9,7 @@ import { defineConfig, devices } from '@playwright/test';
 //   • fixed viewport — screenshots must be comparable across machines
 //   • single worker for visual specs — GPU contention changes frame timing
 //   • always load scenes with ?seed=<n>&freeze=1
+
 export default defineConfig({
   testDir: './tests/e2e',
   outputDir: './test-results',
@@ -26,10 +30,9 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     launchOptions: {
-      // Escape hatch: `npx playwright install` is geo-blocked in some regions (CDN returns 403).
-      // Point PW_CHROMIUM_PATH at any local Chromium/Chrome binary to run the suite anyway.
-      // Leave it unset in CI — the pinned browser is what makes screenshots comparable.
-      executablePath: process.env.PW_CHROMIUM_PATH,
+      // See resolveLocalChromium above. Set PW_CHROMIUM_PATH to force a specific binary;
+      // undefined means "use the browser Playwright installed", which is what CI does.
+      executablePath: resolveLocalChromium(),
       // Software WebGL keeps CI headless runs consistent. Locally, swap in a real GPU
       // (drop --use-angle=swiftshader) when you need honest frame-time numbers.
       //

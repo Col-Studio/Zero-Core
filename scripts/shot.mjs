@@ -18,6 +18,7 @@
 import { chromium } from '@playwright/test';
 import { mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { resolveLocalChromium } from './chromium-path.mjs';
 
 const args = Object.fromEntries(
   process.argv.slice(2).map((a) => {
@@ -48,8 +49,9 @@ if (scenes.length === 0) {
 if (!existsSync(OUT)) mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({
-  // Set PW_CHROMIUM_PATH if `npx playwright install` is blocked in your region (403 from the CDN).
-  executablePath: process.env.PW_CHROMIUM_PATH,
+  // Falls back to the newest cached Chromium when the pinned one is missing (the CDN is
+  // geo-blocked here). Same resolver the e2e config uses, so both launch the same binary.
+  executablePath: resolveLocalChromium(),
   args: [
     '--use-gl=angle',
     '--use-angle=swiftshader',
