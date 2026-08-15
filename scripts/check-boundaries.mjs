@@ -40,6 +40,14 @@ const FROZEN = [
 const MAX_LINES = 400;
 const ALLOW = /\/\/\s*allow-boundary/;
 
+/**
+ * True for lines that are pure comment or JSDoc prose. The content checks below skip these:
+ * documentation that *names* a banned API (as rng.ts does when it explains why Math.random() is
+ * forbidden) must not be reported as a use of it. Code with a trailing comment is still checked,
+ * since the code part comes first on the line.
+ */
+const isCommentLine = (text) => /^\s*(?:\/\/|\/\*|\*)/.test(text);
+
 const errors = [];
 const warnings = [];
 
@@ -111,7 +119,7 @@ function checkFile(file) {
 
   // 2. Math.random — determinism killer
   lines.forEach((text, i) => {
-    if (ALLOW.test(text)) return;
+    if (ALLOW.test(text) || isCommentLine(text)) return;
     if (/\bMath\.random\s*\(/.test(text)) {
       fail(relPath, i + 1, `Math.random() is banned. Use rng from '@contracts/rng'.`);
     }
@@ -120,7 +128,7 @@ function checkFile(file) {
   // 3. wall-clock in simulation code (presentation + dev harnesses are exempt)
   if (owner && owner !== 'presentation' && !isDev) {
     lines.forEach((text, i) => {
-      if (ALLOW.test(text)) return;
+      if (ALLOW.test(text) || isCommentLine(text)) return;
       if (/\b(?:Date\.now\s*\(|performance\.now\s*\(|new Date\s*\()/.test(text)) {
         fail(
           relPath,
@@ -137,10 +145,28 @@ function checkFile(file) {
   }
 }
 
-/** 6. Events declared in contracts must be both emitted and listened to somewhere. */
+/**
+ * 6. Events declared in contracts must be both emitted and listened to somewhere.
+ *
+ * Only meaningful once every module is present. On a single-module branch, 28 of the 31 events
+ * are *expected* to be unwired — reporting them there would bury the real signal and train
+ * everyone to ignore warnings. So this runs on the fully merged tree (or when FORCE_EVENT_WIRING
+ * is set) and prints one explanatory line otherwise.
+ */
 function checkEventWiring(files) {
   const eventsFile = join(SRC, 'contracts', 'events.ts');
   if (!existsSync(eventsFile)) return; // pre-Card-1: nothing to check yet
+
+  const present = MODULES.filter((m) => existsSync(join(SRC, m)));
+  const missing = MODULES.filter((m) => !present.includes(m));
+  if (missing.length > 0 && !process.env.FORCE_EVENT_WIRING) {
+    console.log(
+      `ℹ  event-wiring check skipped — not yet merged (missing: ${missing.join(', ')}). ` +
+        `Set FORCE_EVENT_WIRING=1 to run it anyway.`,
+    );
+    return;
+  }
+
   const decl = readFileSync(eventsFile, 'utf8');
 
   // event names look like 'creature:died' / "village:economyChanged"

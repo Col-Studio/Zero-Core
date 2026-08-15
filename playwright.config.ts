@@ -26,13 +26,22 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     launchOptions: {
-      // Software WebGL keeps CI headless runs consistent. Locally, drop --use-gl=swiftshader
-      // for real GPU performance measurements.
+      // Escape hatch: `npx playwright install` is geo-blocked in some regions (CDN returns 403).
+      // Point PW_CHROMIUM_PATH at any local Chromium/Chrome binary to run the suite anyway.
+      // Leave it unset in CI — the pinned browser is what makes screenshots comparable.
+      executablePath: process.env.PW_CHROMIUM_PATH,
+      // Software WebGL keeps CI headless runs consistent. Locally, swap in a real GPU
+      // (drop --use-angle=swiftshader) when you need honest frame-time numbers.
+      //
+      // Do NOT add --disable-frame-rate-limit here. Measured: with it, every page.screenshot()
+      // hangs until timeout under swiftshader — uncapped rAF starves the compositor's capture
+      // path, so Playwright waits forever for a stable frame. It broke the whole visual loop.
+      // For perf runs only, set PW_UNCAP_FPS=1.
       args: [
         '--use-gl=angle',
         '--use-angle=swiftshader',
         '--enable-unsafe-swiftshader',
-        '--disable-frame-rate-limit',
+        ...(process.env.PW_UNCAP_FPS ? ['--disable-frame-rate-limit'] : []),
       ],
     },
   },

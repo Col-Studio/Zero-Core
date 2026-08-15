@@ -15,7 +15,16 @@ export default mergeConfig(
       coverage: {
         reporter: ['text', 'html'],
         include: ['src/**/*.ts'],
-        exclude: ['src/**/dev/**', 'src/**/*.data.ts', 'src/**/*.d.ts'],
+        exclude: [
+          'src/**/dev/**',
+          'src/**/*.data.ts',
+          'src/**/*.d.ts',
+          // Type-only files compile to nothing, so v8 scores them 0% and drags the real number
+          // down. Excluding them keeps the ≥80% gate honest instead of decorative.
+          'src/contracts/services.ts',
+          'src/contracts/events/**',
+        ],
+        thresholds: { statements: 80, branches: 80, functions: 80, lines: 80 },
       },
     },
   }),

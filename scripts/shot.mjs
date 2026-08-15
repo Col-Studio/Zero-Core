@@ -48,12 +48,15 @@ if (scenes.length === 0) {
 if (!existsSync(OUT)) mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({
+  // Set PW_CHROMIUM_PATH if `npx playwright install` is blocked in your region (403 from the CDN).
+  executablePath: process.env.PW_CHROMIUM_PATH,
   args: [
     '--use-gl=angle',
     '--use-angle=swiftshader',
     '--enable-unsafe-swiftshader',
-    '--disable-frame-rate-limit',
     '--hide-scrollbars',
+    // NOT --disable-frame-rate-limit: measured to hang every screenshot under swiftshader.
+    // See the note in playwright.config.ts.
   ],
 });
 
