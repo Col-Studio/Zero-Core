@@ -7,7 +7,7 @@
 //   1. No cross-module imports        — modules talk only via @contracts + the event bus
 //   2. No Math.random()               — determinism; use rng from @contracts/rng
 //   3. No Date.now()/performance.now() in simulation code
-//   4. No edits to frozen files       — (only when a git base ref is available)
+//   4. No edits to frozen files       — on the six module branches; `core` authors them
 //   5. Files under 400 lines          — small files, small context, better AI output
 //   6. No orphaned events             — every event has an emitter and a listener
 //
@@ -195,10 +195,47 @@ function checkEventWiring(files) {
   }
 }
 
+/**
+ * The one branch allowed to change frozen files. CLAUDE.md § Module ownership lists `core` as the
+ * branch that *authors the contracts*, so a frozen-file edit there is the lead doing their job,
+ * while the same edit on any other branch is the thing that breaks the merge.
+ */
+const LEAD_BRANCH = 'core';
+
+/**
+ * The branch the changes come *from*.
+ *
+ * On a pull_request event GITHUB_REF_NAME is the synthetic `<n>/merge` ref, not the source branch,
+ * so GITHUB_HEAD_REF must win — otherwise a lead PR of core -> main would be judged as if it came
+ * from a branch named '5/merge' and fail. Falls back to the local branch outside CI.
+ */
+function currentBranch() {
+  if (process.env.GITHUB_HEAD_REF) return process.env.GITHUB_HEAD_REF;
+  if (process.env.GITHUB_REF_NAME) return process.env.GITHUB_REF_NAME;
+  try {
+    return execSync('git rev-parse --abbrev-ref HEAD', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return '';
+  }
+}
+
 /** 4. frozen-file edits, relative to a base ref. Skipped when git/base is unavailable. */
 function checkFrozen() {
   const base = process.env.FROZEN_BASE;
   if (!base) return;
+
+  const branch = currentBranch();
+  if (branch === LEAD_BRANCH || process.env.FROZEN_LEAD === '1') {
+    console.log(
+      `ℹ  frozen-file check skipped — '${branch || 'unknown'}' is the branch that authors the ` +
+        `contracts. It runs on all six module branches.`,
+    );
+    return;
+  }
+
   let changed = [];
   try {
     const out = execSync(`git diff --name-only ${base}...HEAD`, {
@@ -212,7 +249,12 @@ function checkFrozen() {
   }
   for (const f of changed) {
     if (FROZEN.some((p) => (p.endsWith('/') ? f.startsWith(p) : f === p))) {
-      fail(f, 0, `frozen file modified. Only the integration lead may change this.`);
+      fail(
+        f,
+        0,
+        `frozen file modified on branch '${branch}'. Only the integration lead may change this — ` +
+          `revert it and write the request in your INTEGRATION_NOTES.md instead.`,
+      );
     }
   }
 }

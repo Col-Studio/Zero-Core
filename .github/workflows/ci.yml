@@ -59,7 +59,10 @@ jobs:
       - run: npm run test:e2e
       - name: Upload screenshots + report
         if: always()
-        uses: actions/upload-artifact@v5
+        # v7 runs on node24 natively. v5 targets node20, which the runner force-upgrades with a
+        # deprecation warning on every single run — noise that trains seven people to ignore
+        # annotations, which is exactly when a real one gets missed.
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-artifacts
           path: |
