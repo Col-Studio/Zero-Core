@@ -196,11 +196,18 @@ function checkEventWiring(files) {
 }
 
 /**
- * The one branch allowed to change frozen files. CLAUDE.md § Module ownership lists `core` as the
- * branch that *authors the contracts*, so a frozen-file edit there is the lead doing their job,
- * while the same edit on any other branch is the thing that breaks the merge.
+ * The branches allowed to change frozen files, both owned by the integration lead.
+ *
+ * CLAUDE.md § Module ownership lists `core` as the branch that *authors the contracts*, and `main`
+ * is where the lead merges all seven. A frozen-file edit on either is the lead doing their job;
+ * the same edit on a module branch is the thing that breaks the merge.
+ *
+ * `main` is listed explicitly rather than relying on a push to main producing an empty diff
+ * against origin/main. That happens to be true today, which means the guard would pass there by
+ * luck instead of by intent — and luck is not a property you want in the script that protects the
+ * one thing keeping seven branches mergeable.
  */
-const LEAD_BRANCH = 'core';
+const LEAD_BRANCHES = new Set(['core', 'main']);
 
 /**
  * The branch the changes come *from*.
@@ -228,10 +235,10 @@ function checkFrozen() {
   if (!base) return;
 
   const branch = currentBranch();
-  if (branch === LEAD_BRANCH || process.env.FROZEN_LEAD === '1') {
+  if (LEAD_BRANCHES.has(branch) || process.env.FROZEN_LEAD === '1') {
     console.log(
-      `ℹ  frozen-file check skipped — '${branch || 'unknown'}' is the branch that authors the ` +
-        `contracts. It runs on all six module branches.`,
+      `ℹ  frozen-file check skipped — '${branch || 'unknown'}' is an integration-lead branch. ` +
+        `It runs on all six module branches.`,
     );
     return;
   }
