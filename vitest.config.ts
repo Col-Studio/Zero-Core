@@ -8,8 +8,14 @@ export default mergeConfig(
   defineConfig({
     test: {
       environment: 'node',
-      include: ['tests/unit/**/*.test.ts', 'src/**/*.test.ts'],
-      exclude: ['tests/e2e/**', 'node_modules/**'],
+      // CLAUDE.md § Hard invariants 7 tells every member to put tests in `tests/<their-folder>/`.
+      // This pattern must match that or their tests are silently never collected: `npm run test`
+      // reports a confident green from someone else's suite, and the coverage gate then fails
+      // their module at 0% for a reason the message does not explain. Measured — it happened.
+      //
+      // Convention: *.test.ts is Vitest, *.spec.ts is Playwright. Anywhere under tests/.
+      include: ['tests/**/*.test.ts', 'src/**/*.test.ts'],
+      exclude: ['tests/e2e/**', '**/*.spec.ts', 'node_modules/**'],
       // Simulation tests can run long tick counts; keep headroom for fuzz/soak tests.
       testTimeout: 30_000,
       coverage: {

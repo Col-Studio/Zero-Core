@@ -11,7 +11,14 @@ import { resolveLocalChromium } from './scripts/chromium-path.mjs';
 //   • always load scenes with ?seed=<n>&freeze=1
 
 export default defineConfig({
-  testDir: './tests/e2e',
+  // CLAUDE.md § Hard invariants 7 puts each member's tests in `tests/<their-folder>/`, so the
+  // e2e suite has to look at all of tests/, not just tests/e2e/. testMatch is pinned to *.spec.ts
+  // because Playwright's default also matches *.test.ts — without it, Playwright would try to run
+  // every Vitest unit file in a browser and fail in a thoroughly confusing way.
+  //
+  // Convention: *.spec.ts is Playwright, *.test.ts is Vitest.
+  testDir: './tests',
+  testMatch: '**/*.spec.ts',
   outputDir: './test-results',
   fullyParallel: false,
   workers: 1,

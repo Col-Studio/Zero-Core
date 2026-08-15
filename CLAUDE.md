@@ -47,7 +47,9 @@ Never hand-roll collision — Rapier only. Never author 3D art. Never ship audio
    folder. All cross-module communication goes through the typed event bus.
 6. **Never edit frozen files** (list below). If a contract is wrong, stop and write the concern
    in your `INTEGRATION_NOTES.md`.
-7. **Create files only inside your assigned folder** and `tests/<your-folder>/`.
+7. **Create files only inside your assigned folder** and `tests/<your-folder>/`. Name test files
+   `*.test.ts` for Vitest and `*.spec.ts` for Playwright — the runners select on that suffix, so
+   the wrong one is silently never collected and the suite still reports green.
 8. **Every file under 400 lines.** Split aggressively — small files mean small context and
    better output.
 9. **All tuning numbers in `*.data.ts` tables**, never inline in logic.
