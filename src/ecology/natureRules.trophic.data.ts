@@ -1,0 +1,190 @@
+/**
+ * Marquee rule chain #1 — the card's own worked example: kill the wolves, the deer boom, the
+ * vegetation collapses, the region starves, and something worse moves in to fill the gap. Plus
+ * the two sibling apex chains (lynx/cave-bear, otter/swamp-wyrm) built the same way, and the
+ * "deer boom carries its own punishment" disease rule.
+ *
+ * Pure data — see rules.types.ts for the shape and rulesEngine.ts for how `sustainedFor`/`after`
+ * turn a condition into a delayed, narrated effect.
+ */
+
+import { SPECIES_IDS as S } from './species.data';
+import type { NatureRule } from './rules.types';
+
+export const TROPHIC_RULES: NatureRule[] = [
+  {
+    id: 'wolf_collapse',
+    when: { kind: 'population', species: S.greyWolf, op: '<', value: 0.15 },
+    sustainedFor: 100,
+    after: 40,
+    then: [{ kind: 'populationRate', species: S.redDeer, multiplier: 1.5, durationTicks: 8_000 }],
+    narrative: 'With the wolves gone, the deer have grown bold this season.',
+    severity: 'notable',
+    blamedSpecies: S.greyWolf,
+  },
+  {
+    id: 'mesopredator_release_deer',
+    when: { kind: 'population', species: S.redDeer, op: '>', value: 0.85 },
+    sustainedFor: 300,
+    after: 100,
+    chain: ['wolf_collapse'],
+    then: [{ kind: 'populationRate', species: S.meadowGrass, multiplier: 0.8, durationTicks: 6_000 }],
+    narrative: 'Deer herds strip the meadows faster than the grass can recover.',
+    severity: 'notable',
+    blamedSpecies: S.greyWolf,
+  },
+  {
+    id: 'overgrazing_vegetation_strain',
+    when: { kind: 'vegetation', op: '<', value: 0.35 },
+    sustainedFor: 500,
+    after: 150,
+    chain: ['wolf_collapse', 'mesopredator_release_deer'],
+    then: [{ kind: 'populationRate', species: S.meadowGrass, multiplier: 0.7, durationTicks: 6_000 }],
+    narrative: 'Bare earth is starting to show between the tree lines.',
+    severity: 'notable',
+  },
+  {
+    id: 'desertification',
+    when: { kind: 'vegetation', op: '<', value: 0.2 },
+    sustainedFor: 1_200,
+    after: 300,
+    chain: ['overgrazing_vegetation_strain'],
+    then: [
+      { kind: 'vegetationDelta', delta: -0.08 },
+      { kind: 'populationRate', species: S.berryShrub, multiplier: 0.5, durationTicks: 10_000 },
+    ],
+    narrative: 'What was forest is turning to dust and thorn.',
+    severity: 'major',
+  },
+  {
+    id: 'mass_starvation_herbivores',
+    when: { kind: 'vegetation', op: '<', value: 0.12 },
+    sustainedFor: 800,
+    after: 200,
+    chain: ['desertification'],
+    then: [
+      { kind: 'populationShock', species: S.redDeer, fractionDelta: -0.3 },
+      { kind: 'populationShock', species: S.hare, fractionDelta: -0.3 },
+    ],
+    narrative: 'The starved carcasses of deer and hare mark the treeline this winter.',
+    severity: 'catastrophic',
+  },
+  {
+    id: 'slow_recovery',
+    when: { kind: 'vegetation', op: '>', value: 0.55 },
+    sustainedFor: 3_000,
+    after: 500,
+    chain: ['mass_starvation_herbivores'],
+    then: [{ kind: 'populationRate', species: S.meadowGrass, multiplier: 1.2, durationTicks: 6_000 }],
+    narrative: 'Green is finally returning to the scarred hillside.',
+    severity: 'notable',
+  },
+  {
+    id: 'apex_vacuum_direwolf_migration',
+    when: {
+      kind: 'compound',
+      op: 'AND',
+      conditions: [
+        { kind: 'population', species: S.greyWolf, op: '<', value: 0.08 },
+        { kind: 'population', species: S.redDeer, op: '>', value: 0.6 },
+      ],
+    },
+    sustainedFor: 1_500,
+    after: 600,
+    chain: ['wolf_collapse', 'mesopredator_release_deer'],
+    then: [{ kind: 'migration', species: S.direWolf, direction: 'in', reason: 'niche-vacant', countFraction: 0.6, fromAdjacent: true }],
+    narrative: 'Something larger has caught the scent of easy prey. A dire wolf pack is moving in.',
+    severity: 'catastrophic',
+    blamedSpecies: S.greyWolf,
+    once: true,
+  },
+  {
+    id: 'deer_overcrowd_disease',
+    when: { kind: 'population', species: S.redDeer, op: '>', value: 0.95 },
+    sustainedFor: 600,
+    after: 150,
+    then: [{ kind: 'populationShock', species: S.redDeer, fractionDelta: -0.25 }],
+    narrative: 'The herd grew too large for the land to bear; sickness has thinned it again.',
+    severity: 'notable',
+  },
+  {
+    id: 'lynx_collapse',
+    when: { kind: 'population', species: S.lynx, op: '<', value: 0.15 },
+    sustainedFor: 100,
+    after: 40,
+    then: [{ kind: 'populationRate', species: S.hare, multiplier: 1.4, durationTicks: 8_000 }],
+    narrative: 'No lynx call echoes from the tree line anymore.',
+    severity: 'notable',
+    blamedSpecies: S.lynx,
+  },
+  {
+    id: 'mesopredator_release_hare_goat',
+    when: { kind: 'population', species: S.hare, op: '>', value: 0.85 },
+    sustainedFor: 300,
+    after: 100,
+    chain: ['lynx_collapse'],
+    then: [{ kind: 'populationRate', species: S.alpineMoss, multiplier: 0.75, durationTicks: 6_000 }],
+    narrative: 'Hares have overrun the high meadows, and the moss is paying for it.',
+    severity: 'notable',
+    blamedSpecies: S.lynx,
+  },
+  {
+    id: 'cavebear_migration',
+    when: {
+      kind: 'compound',
+      op: 'AND',
+      conditions: [
+        { kind: 'population', species: S.lynx, op: '<', value: 0.08 },
+        { kind: 'population', species: S.hare, op: '>', value: 0.6 },
+      ],
+    },
+    sustainedFor: 1_500,
+    after: 600,
+    chain: ['lynx_collapse', 'mesopredator_release_hare_goat'],
+    then: [{ kind: 'migration', species: S.caveBear, direction: 'in', reason: 'niche-vacant', countFraction: 0.6, fromAdjacent: true }],
+    narrative: 'A cave bear has come down from the high passes, and it is not leaving.',
+    severity: 'catastrophic',
+    blamedSpecies: S.lynx,
+    once: true,
+  },
+  {
+    id: 'otter_collapse',
+    when: { kind: 'population', species: S.riverOtter, op: '<', value: 0.15 },
+    sustainedFor: 100,
+    after: 40,
+    then: [{ kind: 'populationRate', species: S.lakeFish, multiplier: 1.4, durationTicks: 8_000 }],
+    narrative: 'The riverbanks are quiet where otters used to slide.',
+    severity: 'notable',
+    blamedSpecies: S.riverOtter,
+  },
+  {
+    id: 'mesopredator_release_fish',
+    when: { kind: 'population', species: S.lakeFish, op: '>', value: 0.85 },
+    sustainedFor: 300,
+    after: 100,
+    chain: ['otter_collapse'],
+    then: [{ kind: 'populationRate', species: S.lakeAlgae, multiplier: 0.7, durationTicks: 6_000 }],
+    narrative: 'Fish crowd the shallows, stripping the algae bare.',
+    severity: 'notable',
+    blamedSpecies: S.riverOtter,
+  },
+  {
+    id: 'swampwyrm_migration',
+    when: {
+      kind: 'compound',
+      op: 'AND',
+      conditions: [
+        { kind: 'population', species: S.riverOtter, op: '<', value: 0.08 },
+        { kind: 'population', species: S.lakeFish, op: '>', value: 0.6 },
+      ],
+    },
+    sustainedFor: 1_500,
+    after: 600,
+    chain: ['otter_collapse', 'mesopredator_release_fish'],
+    then: [{ kind: 'migration', species: S.swampWyrm, direction: 'in', reason: 'niche-vacant', countFraction: 0.5, fromAdjacent: true }],
+    narrative: 'The reeds part for something ancient and hungry, drawn up from the deep marsh.',
+    severity: 'catastrophic',
+    blamedSpecies: S.riverOtter,
+    once: true,
+  },
+];

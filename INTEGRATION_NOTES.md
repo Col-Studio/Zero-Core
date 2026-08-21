@@ -118,3 +118,100 @@ comparable, so don't set it in a workflow.
 Do **not** edit `src/contracts/**`. Write it in your `INTEGRATION_NOTES.md` and tell me. I amend
 it for all seven branches at once. Divergent contracts are the single thing that breaks this
 architecture — one member's local fix becomes everyone's merge conflict.
+
+---
+
+## Member 3 — ecology
+
+Everything below is also in `src/ecology/README.md` (architecture, tuning knobs); this section
+is just what *you*, the integration lead, need to do or know.
+
+### Wiring `mountEcology` into the registry
+
+`ctx.services` is `ServiceRegistryLike` (read-only), so `mountEcology(ctx)` cannot call
+`registry.register('ecology', ...)` itself — only `App.tsx` holds the real `ServiceRegistry`.
+When you uncomment ecology's `MODULES` row, also add, right after `mountEcology(ctx)` runs (or
+anywhere later that same tick, before anything queries `ecology`):
+
+```ts
+import { mountEcology, getMountedEcologyService } from '@ecology/index';
+
+const disposeEcology = mountEcology(ctx);
+const ecologyService = getMountedEcologyService();
+if (ecologyService) registry.register('ecology', ecologyService);
+```
+
+`getMountedEcologyService()` returns the same `IEcologyQuery` instance `mountEcology` built
+internally — there's exactly one live instance per mount, tracked module-locally.
+
+### ecology dev harness routing (open question)
+
+`src/ecology/dev/Harness.tsx` is a genuinely standalone component (per the card: "mounts ONLY
+your module against Null services") that builds its own `MountContext`, its own `<Canvas>`, and
+calls `mountEcology` + `markReady()` itself. But `App.tsx`/`main.tsx` are frozen and `MODULES` is
+empty pre-merge, so I could not find a way for `?scene=ecology` to actually resolve to it through
+the normal `npm run dev` route on this branch. I did not edit either frozen file to work around
+this. Two options I can see, your call:
+
+1. Temporarily wire `EcologyHarness` into `App.tsx`'s `Scene` for local testing on module
+   branches only (revert before merge) — matches how the rest of the debug-scene convention
+   reads, but you said not to touch frozen files, so I didn't do this myself.
+   2. Give every module a tiny per-branch dev entry (outside the frozen set) that `vite.config.ts`
+   could multi-page into — bigger change, your call whether it's worth it project-wide.
+
+`tests/ecology/harness.spec.ts` is written assuming the routing exists and documents this
+assumption inline; it should start passing the moment routing lands, with no changes needed.
+
+### Assumptions I made about other modules' behaviour
+
+- **`world`**: `regionsFromWorld(ctx.services.world())` is called once at mount to build the
+  region roster (not cached as a live service reference — see the code comment in `index.ts`).
+  If `world`'s real region list can change after mount (e.g. procedural reveal), `ecology` won't
+  pick that up without a remount. Flag if that's a real requirement and I'll make it re-poll.
+- **Weather**: `ecology` listens for `weather:changed` and keeps a single **global** `WeatherKind`
+  (not per-region), used only by the `fire_ignition` rule's `weather` condition. If `world` emits
+  per-region weather and regions can differ meaningfully, this rule will be less precise than
+  intended — an easy fix once `world`'s actual event payload is real (I only have the contract
+  type to go on, no live behaviour to test against).
+- **Season/calendar**: `ecology` derives season and day count purely from tick count
+  (`seasons.ts`), independent of `world`'s `time:phase`. If `world`'s real calendar constants
+  differ from `SEASON_LENGTH_TICKS` in `seasons.data.ts`, the two will visibly disagree (e.g. a
+  snowy render in what `ecology` still considers autumn). Easiest fix: either align the tick
+  constants, or have `ecology` listen to `time:phase` instead — I left it tick-derived because a
+  Null `world` never emits events, and standalone development needed a calendar regardless.
+- **`society`**: the `economy` rule-condition kind always reads a neutral `0.5` — there's no real
+  village-stress signal to read yet. None of the shipped 63 rules currently use an `economy`
+  condition for this reason (the "village hostility"/"village famine" narrative beats key off
+  `population`/`playerKills` conditions instead, which `ecology` can actually observe).
+- **`creatures`**: `ecology` assumes `creature:died` events carry a `regionId` and a `cause` that
+  is exactly `'player'` when and only when the player did it — that distinction is load-bearing
+  for the whole game's premise (`pressure.ts`). If `creatures` ever emits a death without a
+  region, that death is silently dropped rather than mis-attributed to whichever region `ecology`
+  happens to be looking at.
+- **Species/creature identity**: `ecology`'s `SpeciesId`s (`src/ecology/species.data.ts`, 24
+  species) are the ones `creatures` needs to match when spawning bodies and reporting deaths —
+  I couldn't coordinate on a shared species list since `creatures`' branch isn't visible to me.
+  If `creatures` has already picked different ids, one of us needs to reconcile the list; happy
+  to rename mine to match rather than the other way around, since mine also drives the trophic
+  math (diet graph, capacities) and would need retuning either way if species disappear.
+
+### What I could not actually run in this environment
+
+No network access in my sandbox, so I could not `npm ci` or run `npm run verify` for real. What
+I *did* verify directly:
+
+- Every pure-logic file in `src/ecology` (everything except `dev/Harness.tsx` and
+  `dev/Dashboard.tsx`, which need `react`/`@react-three/fiber` — not resolvable without `npm ci`)
+  typechecks cleanly against the real `tsconfig.json` compiler options, including every test in
+  `tests/ecology/` (checked against real project `tsconfig.json` settings, with local type stubs
+  standing in only for the `vitest` and `@playwright/test` module declarations themselves).
+- `node scripts/check-boundaries.mjs` — the real, frozen script — passes cleanly against this
+  branch (no `Math.random`, no wall-clock in sim code, no cross-module imports, every file under
+  400 lines).
+- I could not actually execute `npm run test`, `npm run test:e2e`, or generate Playwright
+  screenshots. Please run `npm run verify` for real after `npm ci` before merging — I'd
+  particularly watch `tests/ecology/stability-fuzz.test.ts` (20 seeds × 500k ticks on a 4-region
+  map; it's the slow one by design, 180s timeout) and `tests/ecology/cascade-wolves.test.ts`
+  (asserts real rule-firing timing I tuned by reading the math, not by running it — if the
+  cascade doesn't fire within the tick budgets given, the fix is almost certainly loosening a
+  `sustainedFor`/`after` in `natureRules.trophic.data.ts`, not the engine itself).
