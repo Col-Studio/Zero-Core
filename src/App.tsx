@@ -8,6 +8,7 @@
  *   2. build the session singletons (rng, bus, registry)
  *   3. own the single <Canvas>
  *   4. call each module's mountX(ctx), each inside its own error boundary
+ *   5. route ?scene= to the requested module's debug scene
  *
  * The error boundaries are deliberate: with seven independently developed modules, one throwing
  * component must not black-screen a demo. A failed module degrades to a visible badge while the
@@ -15,13 +16,22 @@
  *
  * ## Adding a module at merge time
  *
- * Each branch adds exactly one <ModuleSlot> below plus one registry.register() call, in merge
- * order (core → world → ecology → creatures → society → player → presentation). Conflicts here
- * are expected and trivial — a handful of lines, resolved by hand.
+ * Each branch adds exactly one MODULES entry, one <ModuleSlot> in the scene, and one
+ * registry.register() call, in merge order (core → world → ecology → creatures → society →
+ * player → presentation). Conflicts here are expected and trivial — a handful of lines, resolved
+ * by hand.
+ *
+ * ## Why `core` is wired differently from the other six
+ *
+ * `mountCore` starts the simulation, and the shell's `getTick()` has to report the tick the
+ * simulation is actually on — every other module reads time through it. So the shell asks the
+ * core runtime for the tick, and seeds it with `?tick=` before the runtime exists, which is how
+ * `mountCore` learns how far to fast-forward. `core` also renders the dev overlay and its own
+ * debug scenes; the other six will render theirs the same way, in their own slot.
  */
 
 import { Component, useMemo, useRef, type ErrorInfo, type ReactNode } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { ACESFilmicToneMapping, SRGBColorSpace } from 'three';
 import {
   createEventBus,
@@ -33,6 +43,9 @@ import {
   type MountFn,
   type Tick,
 } from '@contracts/index';
+import { mountCore, getCoreRuntime } from '@core/index';
+import { CoreScenes } from '@core/dev/CoreScenes';
+import { DevOverlay } from '@core/dev/DevOverlay';
 
 // -------------------------------------------------------------------------------------------
 // Error boundary — one per module
@@ -70,11 +83,9 @@ class ModuleSlot extends Component<SlotProps, SlotState> {
 
 /**
  * Every module's mount function, in merge order. Each branch adds its own entry.
- * Empty until modules land — the shell must run standalone, which is what proves the contracts
- * are self-sufficient.
  */
 const MODULES: readonly { name: string; mount: MountFn }[] = [
-  // { name: 'core',         mount: mountCore },
+  { name: 'core', mount: mountCore },
   // { name: 'world',        mount: mountWorld },
   // { name: 'ecology',      mount: mountEcology },
   // { name: 'creatures',    mount: mountCreatures },
@@ -83,20 +94,22 @@ const MODULES: readonly { name: string; mount: MountFn }[] = [
   // { name: 'presentation', mount: mountPresentation },
 ];
 
-function useSession(): { ctx: MountContext; setTick: (t: Tick) => void } {
+function useSession(): MountContext {
   return useMemo(() => {
     const params = parseSessionParams();
-    const tickRef = { current: params.tick as Tick };
-    const getTick = (): Tick => tickRef.current;
+
+    // Before `core` mounts this reports the requested tick (so `mountCore` knows how far to
+    // fast-forward); after that the core loop owns the clock and everyone reads it here.
+    const getTick = (): Tick => getCoreRuntime()?.getTick() ?? (params.tick as Tick);
 
     const rng = createRng(params.seed);
     const bus = createEventBus();
-    bus.setTick(tickRef.current);
+    bus.setTick(params.tick as Tick);
 
     // Registry defaults every service to its Null, so the shell runs with zero modules present.
     const services = createServiceRegistry({ getTick });
 
-    const ctx: MountContext = {
+    return {
       seed: params.seed,
       rng,
       bus,
@@ -104,14 +117,6 @@ function useSession(): { ctx: MountContext; setTick: (t: Tick) => void } {
       getTick,
       debugScene: params.scene,
       frozen: params.freeze,
-    };
-
-    return {
-      ctx,
-      setTick: (t: Tick) => {
-        tickRef.current = t;
-        bus.setTick(t);
-      },
     };
   }, []);
 }
@@ -121,8 +126,7 @@ function useSession(): { ctx: MountContext; setTick: (t: Tick) => void } {
 // -------------------------------------------------------------------------------------------
 
 function Scene({ ctx }: { ctx: MountContext }): ReactNode {
-  // Modules mount imperatively; the shell only provides the scene graph and lighting rig that
-  // presentation later replaces.
+  // Modules mount imperatively, once, before the first frame is drawn.
   const mounted = useRef(false);
   if (!mounted.current) {
     mounted.current = true;
@@ -133,8 +137,18 @@ function Scene({ ctx }: { ctx: MountContext }): ReactNode {
         console.error(`[shell] mount '${name}' threw:`, error);
       }
     }
-    markReady();
   }
+
+  // Readiness after the first *rendered* frame, not during mount: the screenshot harness wants a
+  // scene that is mounted, fast-forwarded to its tick, and actually drawn. CoreScenes' LoopPump
+  // signals too; the flag is idempotent, and this covers scenes without a loop pump.
+  const signalled = useRef(false);
+  useFrame(() => {
+    if (!signalled.current) {
+      signalled.current = true;
+      markReady();
+    }
+  });
 
   return (
     <>
@@ -150,7 +164,7 @@ function Scene({ ctx }: { ctx: MountContext }): ReactNode {
 }
 
 export default function App(): ReactNode {
-  const { ctx } = useSession();
+  const ctx = useSession();
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#0b0e13' }}>
@@ -174,26 +188,13 @@ export default function App(): ReactNode {
         <ModuleSlot name="scene">
           <Scene ctx={ctx} />
         </ModuleSlot>
+        <ModuleSlot name="core">
+          <CoreScenes ctx={ctx} />
+        </ModuleSlot>
       </Canvas>
 
-      {/* Minimal boot readout. `core` replaces this with the real debug overlay. */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 10,
-          left: 12,
-          font: '12px ui-monospace, monospace',
-          color: '#8fa3bf',
-          pointerEvents: 'none',
-          lineHeight: 1.5,
-        }}
-      >
-        WORLD ZERO · seed {ctx.seed}
-        {ctx.debugScene !== null ? ` · scene ${ctx.debugScene}` : ''}
-        {ctx.frozen ? ' · frozen' : ''}
-        <br />
-        {MODULES.length === 0 ? 'no modules mounted — all services Null' : `${MODULES.length} module(s)`}
-      </div>
+      {/* `core`'s dev overlay: ticks, speed, perf, events, and which services are still Null. */}
+      <DevOverlay ctx={ctx} />
     </div>
   );
 }

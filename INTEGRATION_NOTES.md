@@ -1,120 +1,56 @@
-# CONTRACTS HANDOFF — Phase 1 complete
-
-**From:** integration lead · **To:** Members 2–7 · **Status:** ✅ ready, you are unblocked
-
-The frozen contracts package is on the **`core`** branch. Branch off it — `git fetch && git
-checkout -b <your-module> origin/core` — then start your card. Everything below is what you need to
-know that isn't obvious from reading the code.
 
 ---
 
-## Verified, not just compiled
+# PHASE 2 HANDOFF — core engine spine
+
+**From:** core (Member 1) · **To:** Members 2–7 · **Branch:** `core`
+
+The engine spine is in: ECS, fixed loop, save/replay, reference sim, perf harness, dev overlay,
+and the three debug scenes. **Full API and tuning knobs: `src/core/README.md` — read it before
+you scaffold your module.** The short version of what changed for you:
+
+## What you now have
+
+- **`mountCore(ctx)`** runs on shell boot and starts the 20 Hz simulation. Your module mounts
+  after core in `App.tsx`'s `MODULES` list; read the tick through `ctx.getTick()`.
+- **The tick is the only clock.** `bus.setTick()` is stamped once per step before systems run.
+  Never call `Date.now()`/`performance.now()` in simulation code — the boundary check fails the
+  build (dev files and `presentation` are exempt).
+- **Events are your seam.** Emit/subscribe through the bus; the recorder logs inputs for replay.
+- **Autosave** runs every 600 ticks (30 s) to IndexedDB. Register your module state with the
+  snapshot source (see `runtime.ts`): `snapshots.register({ id: 'yourModule', capture, restore })`
+  — capture/restore must return/accept plain cloneable data, and unknown keys from newer saves
+  are preserved as orphan blobs, never dropped.
+
+## Verified on this branch
 
 | Gate | Result |
 |---|---|
 | `npm run typecheck` | 0 errors |
-| `npm run boundaries` | clean, 23 files checked |
-| `npm run test` | **122 passing**, 6 files |
-| Coverage | **97.1% statements / 89.2% branch** (gate set at 80%, CI fails below) |
-| `npm run test:e2e` | **5 passing** |
-| Shell screenshot | captured and visually inspected — lit ground plane, correct readout |
-| Determinism | asserted twice over: state hash in unit tests, byte-identical PNG in e2e |
+| `npm run boundaries` | clean, 56 files checked |
+| `npm run test` | **169 passing**, 10 files |
+| `npm run test:e2e` | **9 passing** — 5 shell + 4 core (all three debug scenes, byte-identical frozen frames) |
+| Determinism | save→load→hash equality, replay equality, and identical-PNG assertions all green |
+| Screenshots | `?scene=core\|loop\|save` captured at seed 42, tick 120, frozen — overlay fully live |
 
-Measured shell frame time: the empty shell renders one plane and holds 60 fps under software
-WebGL (swiftshader). Your module owns its own budget from here — state your measured number.
+## Rules that will bite you (learned the hard way in Phase 2)
 
----
+1. **Restore reserves the saved pool, nothing more.** `EcsWorld.restore` grows to the saved
+   capacity only; `hash()` deliberately ignores capacity. Don't "fix" a capacity mismatch by
+   reserving `initialCapacity` — it changes nothing about state but breaks nothing either; the
+   hash is over live rows, which is the property saves rely on.
+2. **Register your snapshot module before the first autosave**, or a mid-session save will
+   silently miss your state (it round-trips as an orphan blob, so nothing is lost — but a
+   reload won't restore you).
+3. **Read the runtime through the hook** (`useCoreRuntime`) — the shell mounts modules inside
+   the Canvas's render pass, which can land after your first render. The hook polls until the
+   singleton exists; don't cache it in a module-level variable.
+4. **Import `@core/ecs/world` by alias, never by relative path** — the boundary checker treats
+   any relative path containing a `world` segment as a cross-module violation.
+5. **Loop tests: feed timestamps, multiply don't accumulate** — repeated float additions drift
+   (59 vs 60 ticks in 3 s), multiplicative timestamps don't.
 
-## Three bugs I found by running things, that would have hit all six of you
+## Measured performance (swiftshader, software GL — hardware numbers will be better)
 
-**1. `--disable-frame-rate-limit` hung every screenshot.** It was in both `playwright.config.ts`
-and `scripts/shot.mjs`. Under swiftshader, uncapped rAF starves the compositor's capture path, so
-`page.screenshot()` waits forever for a stable frame. Symptom: your visual loop times out at 60 s
-with no error explaining why. **Removed.** The e2e suite went from 3.4 min to 12 s. If you need
-uncapped fps for a perf measurement, set `PW_UNCAP_FPS=1` — but never for screenshots.
-
-**2. Missing favicon broke "no console errors".** The browser requested `/favicon.ico`, got a 404,
-and logged a console error — which would fail *your* module's console-error assertion for a reason
-that has nothing to do with your module. Fixed with an inline SVG favicon in `index.html`.
-
-**3. `rng.fork()` derived from live state.** Forking after N draws produced a different stream than
-forking before them, which is the exact desync forks exist to prevent. Now derived from the
-original seed. **If you cached fork output before this fix, re-baseline your screenshots.**
-
----
-
-## The rules that will actually bite you
-
-**Never cache a service.** Resolve through the accessor at use time:
-
-```ts
-// ✅ sees the real module after the merge swap
-const h = ctx.services.world().getHeightAt(x, z);
-
-// ❌ holds a Null forever; the merge silently does nothing
-const world = ctx.services.world();   // at mount
-```
-
-The registry logs `[registry] reading Null 'world'` once per service the first time you read a
-Null. That message is **expected** while you develop standalone. After the merge it means a bug.
-
-**Nulls are deliberately alive, not zeros.** Terrain has >20 m of relief and is continuous;
-populations drift in ~0.38..0.86 and never hit 0 or 1; `NullPlayerQuery` orbits at r=120 over a
-4800-tick period at +1.7 m eye height; there are four **immortal stationary training dummies** at
-(±6, ±6) for combat work, plus six orbiters. `getRecentCascades()` returns `[]` on purpose —
-handle an empty history.
-
-**`ecology` only remembers `cause: 'player'`.** Natural deaths do not enter the pressure ledger.
-If you emit `creature:died` with a wrong cause, the world forgets what the player did, and the
-game's premise breaks silently. Always emit an accurate cause.
-
-**The bus defers nested emits.** An event emitted from inside a listener is queued and drained
-FIFO after the current dispatch completes — it does not interrupt delivery. Cascades depend on
-this. Tested to 50 levels deep with no stack recursion. Listener errors are caught and never
-propagate, so one module throwing can't halt the other six.
-
-**`markReady()` exactly once**, when your scene has loaded *and* reached the requested tick.
-`scripts/shot.mjs` waits on it; skip it and it falls back to a fixed delay and captures a
-half-loaded scene.
-
----
-
-## Two contract changes since the card
-
-- **`events.ts` is now a barrel** over `src/contracts/events/{creatures,ecology,world,society,player}.ts`
-  (the 400-line rule applied to me too). Import path is unchanged: `@contracts/events`.
-- **`parseSessionParams` hardened.** `?seed=` empty now yields the default 42 rather than 0, and
-  `?scene=` empty yields `null` rather than `''` — otherwise every module's scene switch would
-  match a scene named `''`.
-
-The event-wiring check is **skipped until all seven modules are present**. On your branch, 28 of
-31 events are legitimately unwired; reporting that would bury real signal. Run
-`FORCE_EVENT_WIRING=1 npm run boundaries` if you want to see it anyway.
-
----
-
-## Known gaps — mine to close, not yours
-
-Phase 2 (`src/core/`) is not built yet and runs in parallel with your work: the ECS, the 20 Hz
-fixed-timestep loop, save/load, the dev overlay, and the perf harness. **Nothing in your card
-depends on it.** Until the loop lands, drive your own tick in your harness.
-
-`App.tsx` has all seven `MODULES` entries commented out in merge order. At merge each branch
-uncomments exactly one line and adds one `registry.register()` call. Conflicts there are expected
-and trivial.
-
-**Playwright's CDN is geo-blocked in our region** (403 on `npx playwright install`), so the pinned
-browser build is usually missing from your cache. **You do not need to do anything about this** —
-`playwright.config.ts` and `scripts/shot.mjs` share `scripts/chromium-path.mjs`, which falls back to
-the newest Chromium already in your `ms-playwright` cache. `npm run verify` passes on a bare
-checkout with no env vars. If you have no cached Chromium at all, point `PW_CHROMIUM_PATH` at any
-Chrome/Chromium binary. CI never auto-resolves — there the pinned browser is what makes screenshots
-comparable, so don't set it in a workflow.
-
----
-
-## If a contract is wrong
-
-Do **not** edit `src/contracts/**`. Write it in your `INTEGRATION_NOTES.md` and tell me. I amend
-it for all seven branches at once. Divergent contracts are the single thing that breaks this
-architecture — one member's local fix becomes everyone's merge conflict.
+- 10 000-entity stress scene: sim step p95 ≈ 0.8 ms (budget 1.2 ms); `core.motion` ≈ 0.6 ms.
+- Save round-trip of the 10 k world: ~1–2 ms capture+restore, envelope in the low hundreds of kB.
