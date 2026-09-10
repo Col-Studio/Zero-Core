@@ -91,6 +91,11 @@ export function DevOverlay({ ctx }: { ctx: MountContext }): ReactNode {
   const sim = runtime.sim.stats();
   const save = runtime.saves.status();
   const tick = loop.tick();
+  // fps/frame/p95 are wall-clock measurements that differ on every load. In a ?freeze=1 capture
+  // the sim is paused so they are meaningless AND the shell determinism spec screenshots the
+  // canvas the overlay overlaps — so frozen renders must dash them out to stay byte-identical.
+  // Tick, sim time, entity counts, services, and the event log are seed-deterministic and stay.
+  const frozen = ctx.frozen;
 
   return (
     <Shell>
@@ -100,8 +105,8 @@ export function DevOverlay({ ctx }: { ctx: MountContext }): ReactNode {
           <Panel
             title="loop"
             right={
-              <span style={{ color: stats.catchUpFrames > 0 ? UI.warn : UI.dim }}>
-                {stats.catchUpFrames > 0 ? `${stats.catchUpFrames} catch-up` : '20 Hz'}
+              <span style={{ color: frozen ? UI.dim : stats.catchUpFrames > 0 ? UI.warn : UI.dim }}>
+                {frozen ? 'paused' : stats.catchUpFrames > 0 ? `${stats.catchUpFrames} catch-up` : '20 Hz'}
               </span>
             }
           >
@@ -109,14 +114,14 @@ export function DevOverlay({ ctx }: { ctx: MountContext }): ReactNode {
             <Row label="sim time" value={`${(tick / LOOP.tickRate).toFixed(1)} s`} />
             <Row
               label="fps"
-              value={stats.fps.toFixed(0)}
-              tone={stats.fps < 50 && stats.frames > 60 ? 'warn' : 'good'}
+              value={frozen ? '—' : stats.fps.toFixed(0)}
+              tone={frozen ? 'dim' : stats.fps < 50 && stats.frames > 60 ? 'warn' : 'good'}
             />
-            <Row label="frame" value={`${stats.avgFrameMs.toFixed(2)} ms`} />
+            <Row label="frame" value={frozen ? '—' : `${stats.avgFrameMs.toFixed(2)} ms`} />
             <Row
               label="dropped"
-              value={`${(stats.droppedMs / 1000).toFixed(2)} s`}
-              tone={stats.droppedMs > 0 ? 'warn' : 'text'}
+              value={frozen ? '—' : `${(stats.droppedMs / 1000).toFixed(2)} s`}
+              tone={frozen ? 'dim' : stats.droppedMs > 0 ? 'warn' : 'text'}
             />
             <div style={{ display: 'flex', gap: 4, marginTop: 5, flexWrap: 'wrap' }}>
               <Button
@@ -153,10 +158,14 @@ export function DevOverlay({ ctx }: { ctx: MountContext }): ReactNode {
           >
             <Row
               label="frame p95"
-              value={`${report.frameP95Ms.toFixed(2)} ms`}
-              tone={report.frameP95Ms > PERF.frameBudgetMs ? 'warn' : 'good'}
+              value={frozen ? '—' : `${report.frameP95Ms.toFixed(2)} ms`}
+              tone={frozen ? 'dim' : report.frameP95Ms > PERF.frameBudgetMs ? 'warn' : 'good'}
             />
-            <PerfTable rows={report.labels} />
+            {frozen ? (
+              <div style={{ color: UI.dim }}>paused — perf numbers need a running loop</div>
+            ) : (
+              <PerfTable rows={report.labels} />
+            )}
           </Panel>
 
           <Panel title="services" right={<span style={{ color: UI.dim }}>real vs null</span>}>
