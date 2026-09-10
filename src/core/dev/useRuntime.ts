@@ -27,10 +27,12 @@ export function useCoreRuntime(): CoreRuntime | null {
   return runtime;
 }
 
-/** Re-render at `SCENES.overlayHz`, no faster. Returns a monotonically increasing counter. */
-export function useSampler(hz: number = SCENES.overlayHz): number {
+/** Re-render at `SCENES.overlayHz`, no faster. Pass `null` to stop live updates entirely —
+ *  `?freeze=1` captures must be byte-identical. Returns a monotonically increasing counter. */
+export function useSampler(hz: number | null = SCENES.overlayHz): number {
   const [sample, setSample] = useState(0);
   useEffect(() => {
+    if (hz === null) return;
     const handle = window.setInterval(() => setSample((n) => n + 1), Math.round(1000 / hz));
     return () => window.clearInterval(handle);
   }, [hz]);

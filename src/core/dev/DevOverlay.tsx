@@ -27,7 +27,9 @@ const registryStatus = (
 
 export function DevOverlay({ ctx }: { ctx: MountContext }): ReactNode {
   const runtime = useCoreRuntime();
-  useSampler();
+  // Same rule as <Stats/> in CoreScenes: frozen captures are compared byte-for-byte, so the
+  // overlay must render once and never re-render with fresh fps/frame numbers.
+  useSampler(ctx.frozen ? null : undefined);
   useLoopHotkeys(runtime);
   const [saveNote, setSaveNote] = useState('idle');
   const [collapsed, setCollapsed] = useState(false);
